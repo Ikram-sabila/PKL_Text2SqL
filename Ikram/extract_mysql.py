@@ -5,25 +5,29 @@ engine = create_engine("mysql+pymysql://root:abc@localhost:3306/preposyandu")
 inspector = inspect(engine)
 tables = inspector.get_table_names()
 
-tabel_info = []
+tabel_info = {}
 
 for table_name in tables:
     columns = inspector.get_columns(table_name)
-    info = {
-        "tabel": table_name,
-        "kolom": [] 
-    }
-
+    tabel_info[table_name] = {}
     for col in columns:
-        info["kolom"].append({
-            "nama": col["name"],
-            "tipe": str(col["type"])
-        })
-    tabel_info.append(info)
+        tipe = str(col["type"]).split(" ")[0].replace('"utf8mb4_unicode_ci"', "").replace("COLLATE", "").strip()
+        tabel_info[table_name][col["name"]]=tipe
 
-from pprint import pprint
-pprint(tabel_info)
+# for table_name in tables:
+#     columns = inspector.get_columns(table_name)
+#     info = {
+#         "tabel": table_name,
+#         "kolom": []
+#     }
 
-# Optional: print sebagai JSON agar lebih rapi
-# import json
-# print(json.dumps(tabel_info, indent=2, ensure_ascii=False))
+#     for col in columns:
+#         tipe = str(col["type"]).split(" ")[0].replace('"utf8mb4_unicode_ci"', "").replace("COLLATE", "").strip()
+#         info["kolom"].append({
+#             "nama": col["name"],
+#             "tipe": tipe
+#         })
+#     tabel_info.append(info)
+
+import json
+print(json.dumps(tabel_info, indent=2))

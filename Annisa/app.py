@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import subprocess
-import semogabisa
+# import semogabisa
 
 # Fungsi untuk mengonversi query teks ke SQL menggunakan API lokal
 def generate_sql(text_query):
