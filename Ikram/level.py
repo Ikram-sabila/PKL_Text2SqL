@@ -1,11 +1,25 @@
 import pymysql.cursors
 import streamlit as st
 import requests
+import extract_mysql
 import json
 import pandas as pd
+from sqlalchemy import create_engine
+import pymysql
 import re
-import extract_mysql  
 
+# ==== CACHED CONNECTION ====
+@st.cache_resource
+def get_connection():
+    return pymysql.connect(
+        host="localhost",
+        user="root",
+        password="abc",
+        database="preposyandu",
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+# ==== LLM: TEXT TO SQL ====
 def text_to_sql(prompt):
     relevant_tables = detect_relevant_tables(prompt, extract_mysql.tabel_info)
     schema_string = json.dumps(relevant_tables, indent=2)
@@ -38,7 +52,14 @@ def text_to_sql(prompt):
         return result.get("response", "").strip()
     except Exception as e:
         return f"❌ Error: {str(e)}"
+    
+# ==== DETEKSI SQL BERBAHAYA ====
+def is_dangerous_query(sql):
+    dangerous = ['drop', 'delete', 'truncate', 'alter', 'update', 'insert']
+    tokens = re.findall(r'\b\w+\b', sql.lower())
+    return any(word in tokens for word in dangerous)
 
+# ==== DETECT RELEVANT TABLES ====
 def detect_relevant_tables(prompt, tabel_info):
     relevant = {}
     prompt_lower = prompt.lower()
@@ -52,25 +73,28 @@ def detect_relevant_tables(prompt, tabel_info):
                     break
     return relevant
 
+# ==== RUN SQL ====
 def run_sql(sql):
     try:
-        conn = pymysql.connect(
-            host="localhost",
-            user="root",
-            password="abc",
-            database="preposyandu",
-            cursorclass=pymysql.cursors.DictCursor
-        )
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(sql)
         results = cursor.fetchall()
-        conn.close()
+        cursor.close()
+        # print("Hasil dari cursor.fetchall():")
+        print(results)
         return pd.DataFrame(results)
     except Exception as e:
         return f"❌ Query Execution Error: {str(e)}"
 
-# Streamlit UI
+# ==== STREAMLIT UI ====
 st.set_page_config(page_title="Text to SQL with Mistral", page_icon="🤖")
+
+st.sidebar.title("Database Schema")
+for table, columns in extract_mysql.tabel_info.items():
+    st.sidebar.markdown(f"### {table}")
+    st.sidebar.write(", ".join(columns))
+
 st.title("💬 Text to SQL Generator + Executor")
 st.markdown("Ketik pertanyaan dalam bahasa natural, lalu lihat hasil SQL-nya dan jalankan langsung.")
 
@@ -86,14 +110,27 @@ if st.button("🔍 Convert to SQL"):
         st.session_state.generated_sql = sql_result
         st.code(sql_result, language="sql")
 
+# ==== EXECUTE SQL ====
 if "generated_sql" in st.session_state:
     if st.button("Execute SQL"):
-        st.code(st.session_state.generated_sql, language="sql")
-        with st.spinner("Mengeksekusi query..."):
-            result = run_sql(st.session_state.generated_sql)
+        sql = st.session_state.generated_sql
+        st.code(sql, language="sql")
+
+        if is_dangerous_query(sql):
+            st.error("⚠️ Query terdeteksi berbahaya dan dibatalkan.")
+        else:
+            with st.spinner("Mengeksekusi query..."):
+                result = run_sql(sql)
+
             if isinstance(result, pd.DataFrame):
                 st.success("✅ Query berhasil dijalankan!")
-                # st.write("Isi DataFrame:", result.head())
                 st.dataframe(result)
+
+                st.download_button(
+                    "⬇️ Download CSV",
+                    data=result.to_csv(index=False),
+                    file_name="query_result.csv",
+                    mime="text/csv"
+                )
             else:
                 st.error(result)
